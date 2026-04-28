@@ -1,0 +1,49 @@
+rules:
+  - id: hardcoded-aws-access-key
+    patterns:
+      - pattern: |
+          "$KEY"
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: AKIA[0-9A-Z]{16}
+    message: |
+      Hardcoded AWS Access Key ID detected. Remove this credential immediately
+      and rotate it in the AWS console. Use environment variables or AWS OIDC
+      instead of hardcoded credentials.
+    languages: [python, javascript, typescript, java]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: CWE-798
+      owasp: A07:2021
+
+  - id: flask-debug-mode-enabled
+    pattern: app.run(debug=True, ...)
+    message: |
+      Flask debug mode is enabled. This exposes an interactive debugger in the
+      browser and should never run in production. Set debug=False or use an
+      environment variable to control this.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: CWE-94
+      owasp: A05:2021
+
+  - id: npm-unsafe-perm
+    patterns:
+      - pattern: |
+          "$CMD"
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: .*--unsafe-perm.*
+    message: |
+      The --unsafe-perm flag bypasses npm security checks on install scripts.
+      This is dangerous as it allows install scripts to run with elevated
+      privileges. Remove this flag and fix the underlying permission issue.
+    languages: [json]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: CWE-732
+      owasp: A05:2021

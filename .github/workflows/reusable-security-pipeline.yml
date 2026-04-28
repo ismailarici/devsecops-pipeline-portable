@@ -99,6 +99,7 @@ jobs:
             --config p/secrets \
             --config p/docker \
             --config p/terraform \
+            --config .semgrep/ \
             --sarif \
             --output semgrep.sarif \
             || true
