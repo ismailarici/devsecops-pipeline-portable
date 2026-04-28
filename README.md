@@ -8,17 +8,18 @@ A reusable, language-configurable security pipeline for GitHub Actions. Connect 
 
 Every time your app pushes to main or opens a pull request, this pipeline runs automatically:
 
-| Stage               | Tool         | What it catches                                                             |
-| ------------------- | ------------ | --------------------------------------------------------------------------- |
-| Secrets scanning    | TruffleHog   | Live credentials in code and git history                                    |
-| Python SAST         | Bandit       | Python-specific security antipatterns                                       |
-| Multi-language SAST | Semgrep      | OWASP Top 10, injection, misconfigurations                                  |
-| Dependency scanning | pip-audit    | Known CVEs in Python dependencies                                           |
-| SBOM generation     | Syft         | Full inventory of every component in your container                         |
-| Container scanning  | Trivy        | OS and library vulnerabilities in your Docker image                         |
-| IaC scanning        | Checkov      | Terraform and Dockerfile misconfigurations                                  |
-| DAST                | OWASP ZAP    | Runtime vulnerabilities — injection, missing headers, broken access control |
-| Reporting           | GitHub SARIF | All findings in the GitHub Security tab                                     |
+| Stage                       | Tool         | What it catches                                                             |
+| --------------------------- | ------------ | --------------------------------------------------------------------------- |
+| Secrets scanning            | TruffleHog   | Live credentials in code and git history                                    |
+| Python SAST                 | Bandit       | Python-specific security antipatterns                                       |
+| Multi-language SAST         | Semgrep      | OWASP Top 10, injection, misconfigurations, custom rules                    |
+| Python dependency scanning  | pip-audit    | Known CVEs in Python dependencies                                           |
+| Node.js dependency scanning | npm-audit    | Known CVEs in npm packages                                                  |
+| SBOM generation             | Syft         | Full inventory of every component in your container                         |
+| Container scanning          | Trivy        | OS and library vulnerabilities in your Docker image                         |
+| IaC scanning                | Checkov      | Terraform and Dockerfile misconfigurations                                  |
+| DAST                        | OWASP ZAP    | Runtime vulnerabilities — injection, missing headers, broken access control |
+| Reporting                   | GitHub SARIF | All findings in the GitHub Security tab                                     |
 
 All findings appear in your repository's Security tab. No external dashboard required.
 
@@ -29,7 +30,7 @@ All findings appear in your repository's Security tab. No external dashboard req
 ### Prerequisites
 
 - Your app has a `Dockerfile` at `app/Dockerfile`
-- Your app has a `requirements.txt` at `app/requirements.txt` (Python apps)
+- Your app has a `requirements.txt` at `app/requirements.txt` (Python apps) or `package.json` at `app/package.json` (Node.js apps)
 - You have an AWS account with an ECR repository and an IAM role configured for GitHub Actions OIDC
 
 ### Step 1 — Add secrets to your app repo
@@ -60,7 +61,7 @@ on:
 jobs:
   security-pipeline:
     name: Run Security Pipeline
-    uses: ismailarici/devsecops-pipeline-portable/.github/workflows/reusable-security-pipeline.yml@1.0.0
+    uses: ismailarici/devsecops-pipeline-portable/.github/workflows/reusable-security-pipeline.yml@v1.0.0
     with:
       app-language: python
       image-name: your-app-name
@@ -119,6 +120,7 @@ After TruffleHog passes, these jobs run in parallel:
 - Bandit (Python only)
 - Semgrep (all languages)
 - pip-audit (Python only)
+- npm-audit (Node.js only)
 - Checkov (all languages)
 - Build image and generate SBOM
 
@@ -132,13 +134,27 @@ The pipeline summary job runs last and prints a status table of every stage to t
 
 ## Language support
 
-| Language | TruffleHog | Semgrep | Checkov | Bandit | pip-audit |
-| -------- | ---------- | ------- | ------- | ------ | --------- |
-| Python   | ✅         | ✅      | ✅      | ✅     | ✅        |
-| Node.js  | ✅         | ✅      | ✅      | —      | —         |
-| Java     | ✅         | ✅      | ✅      | —      | —         |
+| Language | TruffleHog | Semgrep | Checkov | Bandit | pip-audit | npm-audit |
+| -------- | ---------- | ------- | ------- | ------ | --------- | --------- |
+| Python   | ✅         | ✅      | ✅      | ✅     | ✅        | —         |
+| Node.js  | ✅         | ✅      | ✅      | —      | —         | ✅        |
+| Java     | ✅         | ✅      | ✅      | —      | —         | —         |
 
-Python-specific tools are automatically skipped for non-Python apps. No configuration needed.
+Language-specific tools are automatically skipped for non-matching apps. No configuration needed.
+
+---
+
+## Custom Semgrep rules
+
+The `.semgrep/` directory contains custom rules that run alongside the community rule packs:
+
+| Rule                       | What it catches                                    |
+| -------------------------- | -------------------------------------------------- |
+| `hardcoded-aws-access-key` | AWS Access Key IDs hardcoded in any language       |
+| `flask-debug-mode-enabled` | Flask apps running with `debug=True` in production |
+| `npm-unsafe-perm`          | Use of `--unsafe-perm` flag in npm scripts         |
+
+To add your own rules, place `.yml` rule files in the `.semgrep/` directory of this repo. They will run automatically on every scan.
 
 ---
 
@@ -185,8 +201,9 @@ devsecops-pipeline-portable/
 │       ├── app.py
 │       ├── requirements.txt
 │       └── Dockerfile
-├── .semgrep/                                 ← custom Semgrep rules
+├── .semgrep/
+│   └── custom-rules.yml                     ← custom Semgrep rules
 ├── docs/
-│   └── onboarding.md                         ← detailed onboarding guide
+│   └── onboarding.md                        ← detailed onboarding guide
 └── README.md
 ```
