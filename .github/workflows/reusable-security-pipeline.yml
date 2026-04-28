@@ -128,7 +128,7 @@ jobs:
       - name: Run pip-audit
         run: |
           pip-audit \
-            -r sample-apps/python/requirements.txt \
+            -r app/requirements.txt \
             -f sarif \
             -o pip-audit-results.sarif \
             || true
@@ -157,8 +157,8 @@ jobs:
         run: |
           docker build \
             -t ${{ steps.set-tag.outputs.tag }} \
-            -f sample-apps/python/Dockerfile \
-            sample-apps/python/
+            -f app/Dockerfile \
+            app/
 
       - name: Install Syft
         run: |
