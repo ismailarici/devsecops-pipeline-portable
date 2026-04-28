@@ -71,7 +71,7 @@ jobs:
         run: |
           bandit -r . \
             -x ./tests,./sample-apps \
-            -f json \
+            -f sarif \
             -o bandit-results.sarif \
             || true
 
@@ -129,7 +129,7 @@ jobs:
         run: |
           pip-audit \
             -r app/requirements.txt \
-            -f json \
+            -f sarif \
             -o pip-audit-results.json \
             || true
 
@@ -202,7 +202,9 @@ jobs:
           name: container-image
 
       - name: Load Docker image
-        run: docker load -i container-image.tar
+        run: |
+          docker load -i container-image.tar
+          docker tag $(docker images -q | head -1) ${{ needs.build-and-sbom.outputs.image-tag }}
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@master
@@ -259,7 +261,9 @@ jobs:
           name: container-image
 
       - name: Load Docker image
-        run: docker load -i container-image.tar
+        run: |
+          docker load -i container-image.tar
+          docker tag $(docker images -q | head -1) ${{ needs.build-and-sbom.outputs.image-tag }}
 
       - name: Start application
         run: |
