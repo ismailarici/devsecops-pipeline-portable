@@ -65,13 +65,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install Bandit
-        run: pip install bandit
+        run: pip install bandit bandit-sarif-formatter
 
       - name: Run Bandit
         run: |
           bandit -r . \
             -x ./tests,./sample-apps \
-            -f sarif \
+            -f json \
             -o bandit-results.sarif \
             || true
 
@@ -97,7 +97,7 @@ jobs:
             p/secrets
             p/docker
             p/terraform
-            .semgrep/
+
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
@@ -129,8 +129,8 @@ jobs:
         run: |
           pip-audit \
             -r app/requirements.txt \
-            -f sarif \
-            -o pip-audit-results.sarif \
+            -f json \
+            -o pip-audit-results.json \
             || true
 
       - name: Upload pip-audit SARIF
@@ -171,6 +171,17 @@ jobs:
             -o spdx-json=sbom.spdx.json \
             -o table
 
+      - name: Export Docker image
+        run: |
+          docker save ${{ steps.set-tag.outputs.tag }} -o container-image.tar
+
+      - name: Upload container image
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-image
+          path: container-image.tar
+          retention-days: 1
+
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
         with:
@@ -184,6 +195,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download container image
+        uses: actions/download-artifact@v4
+        with:
+          name: container-image
+
+      - name: Load Docker image
+        run: docker load -i container-image.tar
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@master
@@ -233,6 +252,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download container image
+        uses: actions/download-artifact@v4
+        with:
+          name: container-image
+
+      - name: Load Docker image
+        run: docker load -i container-image.tar
 
       - name: Start application
         run: |
