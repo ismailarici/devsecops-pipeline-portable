@@ -167,24 +167,9 @@ jobs:
           npm audit --json --prefix app > npm-audit-results.json || true
 
       - name: Convert npm-audit to SARIF
-        run: python3 -c "
-import json
-try:
-    data = json.load(open('npm-audit-results.json'))
-    vulns = data.get('vulnerabilities', {})
-    results = []
-    for name, info in vulns.items():
-        severity = info.get('severity', 'low')
-        via = info.get('via', [])
-        desc = via[0].get('title', name) if via and isinstance(via[0], dict) else name
-        results.append({'ruleId': name, 'message': {'text': f'{desc} (severity: {severity})'}, 'locations': [{'physicalLocation': {'artifactLocation': {'uri': 'app/package.json'}}}]})
-except:
-    results = []
-sarif = {'version': '2.1.0', 'runs': [{'tool': {'driver': {'name': 'npm-audit', 'rules': []}}, 'results': results}]}
-json.dump(sarif, open('npm-audit-results.sarif', 'w'))
-print(len(results), 'findings')
-"
-
+        run: |
+          echo 'aW1wb3J0IGpzb24KdHJ5OgogICAgZGF0YSA9IGpzb24ubG9hZChvcGVuKCJucG0tYXVkaXQtcmVzdWx0cy5qc29uIikpCiAgICB2dWxucyA9IGRhdGEuZ2V0KCJ2dWxuZXJhYmlsaXRpZXMiLCB7fSkKICAgIHJlc3VsdHMgPSBbXQogICAgZm9yIG5hbWUsIGluZm8gaW4gdnVsbnMuaXRlbXMoKToKICAgICAgICBzZXZlcml0eSA9IGluZm8uZ2V0KCJzZXZlcml0eSIsICJsb3ciKQogICAgICAgIHZpYSA9IGluZm8uZ2V0KCJ2aWEiLCBbXSkKICAgICAgICBkZXNjID0gdmlhWzBdLmdldCgidGl0bGUiLCBuYW1lKSBpZiB2aWEgYW5kIGlzaW5zdGFuY2UodmlhWzBdLCBkaWN0KSBlbHNlIG5hbWUKICAgICAgICByZXN1bHRzLmFwcGVuZCh7InJ1bGVJZCI6IG5hbWUsICJtZXNzYWdlIjogeyJ0ZXh0IjogZGVzYyArICIgKHNldmVyaXR5OiAiICsgc2V2ZXJpdHkgKyAiKSJ9LCAibG9jYXRpb25zIjogW3sicGh5c2ljYWxMb2NhdGlvbiI6IHsiYXJ0aWZhY3RMb2NhdGlvbiI6IHsidXJpIjogImFwcC9wYWNrYWdlLmpzb24ifX19XX0pCmV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgIHByaW50KCJDb252ZXJzaW9uIGVycm9yOiIsIGUpCiAgICByZXN1bHRzID0gW10Kc2FyaWYgPSB7InZlcnNpb24iOiAiMi4xLjAiLCAicnVucyI6IFt7InRvb2wiOiB7ImRyaXZlciI6IHsibmFtZSI6ICJucG0tYXVkaXQiLCAicnVsZXMiOiBbXX19LCAicmVzdWx0cyI6IHJlc3VsdHN9XX0KanNvbi5kdW1wKHNhcmlmLCBvcGVuKCJucG0tYXVkaXQtcmVzdWx0cy5zYXJpZiIsICJ3IikpCnByaW50KGxlbihyZXN1bHRzKSwgImZpbmRpbmdzIikK' | base64 -d > /tmp/npm_to_sarif.py
+          python3 /tmp/npm_to_sarif.py
       - name: Upload npm-audit SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
