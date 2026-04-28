@@ -1,0 +1,302 @@
+name: Reusable Security Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      app-language:
+        description: "Programming language of the app (python, node, java)"
+        required: true
+        type: string
+      image-name:
+        description: "Docker image name to build and scan"
+        required: true
+        type: string
+      app-port:
+        description: "Port the application exposes"
+        required: false
+        type: string
+        default: "5000"
+      fail-severity:
+        description: "Trivy severity level that fails the build (CRITICAL, HIGH, MEDIUM)"
+        required: false
+        type: string
+        default: "HIGH"
+      aws-region:
+        description: "AWS region for ECR push"
+        required: false
+        type: string
+        default: "us-east-1"
+    secrets:
+      AWS_ACCOUNT_ID:
+        required: true
+      AWS_ROLE_ARN:
+        required: true
+      SEMGREP_APP_TOKEN:
+        required: false
+
+jobs:
+  secrets-scan:
+    name: TruffleHog Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  bandit-scan:
+    name: Bandit Python SAST
+    runs-on: ubuntu-latest
+    needs: secrets-scan
+    if: ${{ inputs.app-language == 'python' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit
+        run: |
+          bandit -r . \
+            -x ./tests,./sample-apps \
+            -f sarif \
+            -o bandit-results.sarif \
+            || true
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  semgrep-scan:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    needs: secrets-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/owasp-top-ten
+            p/secrets
+            p/docker
+            p/terraform
+            .semgrep/
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  pip-audit-scan:
+    name: pip-audit Dependency Scan
+    runs-on: ubuntu-latest
+    needs: secrets-scan
+    if: ${{ inputs.app-language == 'python' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: |
+          pip-audit \
+            -r sample-apps/python/requirements.txt \
+            -f sarif \
+            -o pip-audit-results.sarif \
+            || true
+
+      - name: Upload pip-audit SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pip-audit-results.sarif
+          category: pip-audit
+
+  build-and-sbom:
+    name: Build Image and Generate SBOM
+    runs-on: ubuntu-latest
+    needs: secrets-scan
+    outputs:
+      image-tag: ${{ steps.set-tag.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: set-tag
+        run: echo "tag=${{ inputs.image-name }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.set-tag.outputs.tag }} \
+            -f sample-apps/python/Dockerfile \
+            sample-apps/python/
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM
+        run: |
+          syft ${{ steps.set-tag.outputs.tag }} \
+            -o spdx-json=sbom.spdx.json \
+            -o table
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  trivy-scan:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    needs: build-and-sbom
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-and-sbom.outputs.image-tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: ${{ inputs.fail-severity }}
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+  checkov-scan:
+    name: Checkov IaC Scan
+    runs-on: ubuntu-latest
+    needs: secrets-scan
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform,dockerfile
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  zap-scan:
+    name: OWASP ZAP DAST Scan
+    runs-on: ubuntu-latest
+    needs: build-and-sbom
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start application
+        run: |
+          docker run -d \
+            --name target-app \
+            -p ${{ inputs.app-port }}:${{ inputs.app-port }} \
+            ${{ needs.build-and-sbom.outputs.image-tag }}
+
+      - name: Wait for application to be ready
+        run: |
+          echo "Waiting for app to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:${{ inputs.app-port }} > /dev/null; then
+              echo "App is ready"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 2 seconds..."
+            sleep 2
+          done
+          echo "App failed to start"
+          exit 1
+
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: http://localhost:${{ inputs.app-port }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: "-J zap-results.json"
+          artifact_name: zap-results
+          fail_action: false
+
+      - name: Upload ZAP SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: zap-results.sarif
+          category: zap
+
+  pipeline-summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - secrets-scan
+      - bandit-scan
+      - semgrep-scan
+      - pip-audit-scan
+      - build-and-sbom
+      - trivy-scan
+      - checkov-scan
+      - zap-scan
+    steps:
+      - name: Print summary
+        run: |
+          echo "## Security Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| TruffleHog Secrets Scan | ${{ needs.secrets-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bandit SAST | ${{ needs.bandit-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Semgrep SAST | ${{ needs.semgrep-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| pip-audit Dependency Scan | ${{ needs.pip-audit-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build and SBOM | ${{ needs.build-and-sbom.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trivy Container Scan | ${{ needs.trivy-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Checkov IaC Scan | ${{ needs.checkov-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| OWASP ZAP DAST | ${{ needs.zap-scan.result }} |" >> $GITHUB_STEP_SUMMARY
