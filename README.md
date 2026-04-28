@@ -60,7 +60,7 @@ on:
 jobs:
   security-pipeline:
     name: Run Security Pipeline
-    uses: ismailarici/devsecops-pipeline-portable/.github/workflows/reusable-security-pipeline.yml@main
+    uses: ismailarici/devsecops-pipeline-portable/.github/workflows/reusable-security-pipeline.yml@1.0.0
     with:
       app-language: python
       image-name: your-app-name
