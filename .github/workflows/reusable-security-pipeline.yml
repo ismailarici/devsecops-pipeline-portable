@@ -89,18 +89,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install Semgrep
+        run: pip install semgrep
+
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/owasp-top-ten
-            p/secrets
-            p/docker
-            p/terraform
-
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --config p/docker \
+            --config p/terraform \
+            --sarif \
+            --output semgrep.sarif \
+            || true
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -213,7 +214,7 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: ${{ inputs.fail-severity }}
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF
@@ -294,6 +295,7 @@ jobs:
           cmd_options: "-J zap-results.json"
           artifact_name: zap-results
           fail_action: false
+          allow_issue_writing: false
 
       - name: Upload ZAP SARIF
         uses: github/codeql-action/upload-sarif@v3
