@@ -1,8 +1,11 @@
 # devsecops-pipeline-portable
 
-A reusable, language-configurable security pipeline for GitHub Actions. Connect any app in under 5 minutes and get a full 9-stage security scan automatically — secrets detection, SAST, dependency scanning, container scanning, IaC scanning, SBOM generation, and DAST.
+> **This repository has moved.**
+> Active development continues at [github.com/ismailarici/securepipe](https://github.com/ismailarici/securepipe).
+> This repo is archived and will not receive updates. Please update any caller workflows to reference `ismailarici/securepipe` instead.
 
 ---
+
 
 ## What it does
 
